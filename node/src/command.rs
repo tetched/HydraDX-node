@@ -226,7 +226,7 @@ pub fn run() -> sc_cli::Result<()> {
 
 			let block: Block = generate_genesis_block(&load_spec(
 				&params.chain.clone().unwrap_or_default(),
-				params.parachain_id.into(),
+				params.parachain_id.unwrap_or(200).into(),
 			)?)?;
 			let header_hex = format!("0x{:?}", HexDisplay::from(&block.header().encode()));
 
