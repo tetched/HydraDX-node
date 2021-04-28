@@ -24,8 +24,6 @@ use sp_std::prelude::*;
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
-use sp_std::collections::btree_set::BTreeSet;
-
 use frame_system::{limits, EnsureRoot};
 
 // A few exports that help ease life for downstream crates.
@@ -55,8 +53,7 @@ use module_amm_rpc_runtime_api as amm_rpc;
 use orml_currencies::BasicCurrencyAdapter;
 use orml_traits::parameter_type_with_key;
 use orml_xcm_support::{
-	CurrencyIdConversion, IsConcreteWithGeneralKey, MultiCurrencyAdapter as XCMMultiCurrencyAdapter,
-	NativePalletAssetOr, XcmHandler as XcmHandlerT,
+	IsNativeConcrete, MultiCurrencyAdapter as XCMMultiCurrencyAdapter, MultiNativeAsset, XcmHandler as XcmHandlerT,
 };
 
 use cumulus_primitives_core::relay_chain::Balance as RelayChainBalance;
@@ -64,7 +61,12 @@ pub use primitives::{Amount, AssetId, Balance, Moment, CORE_ASSET_ID};
 
 // XCM imports
 use polkadot_parachain::primitives::Sibling;
-use xcm::v0::{Junction, MultiAsset, MultiLocation, NetworkId, Xcm};
+pub use xcm::v0::{
+	Junction::{GeneralKey, Parachain, Parent},
+	MultiAsset,
+	MultiLocation::{self, X1, X2, X3},
+	NetworkId, Xcm,
+};
 use xcm_builder::{
 	AccountId32Aliases, ChildParachainConvertsVia, LocationInverter, ParentIsDefault, RelayChainAsNative,
 	SiblingParachainAsNative, SiblingParachainConvertsVia, SignedAccountId32AsNative, SovereignSignedViaLocation,
@@ -237,7 +239,7 @@ impl frame_system::Config for Runtime {
 	/// Weight information for the extrinsics of this pallet.
 	type SystemWeightInfo = ();
 	type SS58Prefix = SS58Prefix;
-	type OnSetCode = ParachainSystem;
+	type OnSetCode = cumulus_pallet_parachain_system::ParachainSetCode<Self>;
 }
 
 parameter_types! {
@@ -372,7 +374,7 @@ parameter_types! {
 	pub HydrateNetwork: NetworkId = NetworkId::Named("hydrate".into());
 	pub RelayChainOrigin: Origin = xcm_handler::Origin::Relay.into();
 
-	pub Ancestry: MultiLocation = MultiLocation::X1(Junction::Parachain {
+	pub Ancestry: MultiLocation = X1(Parachain {
 		id: ParachainInfo::parachain_id().into(),
 	});
 
@@ -387,35 +389,65 @@ type LocationConverter = (
 	AccountId32Aliases<HydrateNetwork, AccountId>,
 );
 
-pub struct AssetCurrencyConverter;
+fn native_currency_location(id: CurrencyId) -> MultiLocation {
+	X3(
+		Parent,
+		Parachain {
+			id: ParachainInfo::get().into(),
+		},
+		GeneralKey(vec![id.into()]),
+	)
+}
 
-impl CurrencyIdConversion<AssetId> for AssetCurrencyConverter {
-	fn from_asset(asset: &MultiAsset) -> Option<AssetId> {
-		if let MultiAsset::ConcreteFungible { id: location, .. } = asset {
-			if location == &MultiLocation::X1(Junction::Parent) {
-				return Some(CurrencyId::DOT as u32);
-			}
-			if let Some(Junction::GeneralKey(key)) = location.last() {
-				let r = match CurrencyId::try_from(key.clone()).ok() {
-					Some(val) => Some(val as u32),
-					None => None,
-				};
-
-				return r;
-			}
+pub struct CurrencyIdConvert;
+impl Convert<CurrencyId, Option<MultiLocation>> for CurrencyIdConvert {
+	fn convert(id: CurrencyId) -> Option<MultiLocation> {
+		match id {
+			CurrencyId::DOT => Some(X1(Parent)),
+			CurrencyId::HDT => Some(native_currency_location(id)),
+			_ => None,
 		}
-		None
+	}
+}
+impl Convert<MultiLocation, Option<CurrencyId>> for CurrencyIdConvert {
+	fn convert(location: MultiLocation) -> Option<CurrencyId> {
+		let _para_id: u32 = ParachainInfo::get().into();
+		match location {
+			X1(Parent) => Some(CurrencyId::DOT),
+			X3(Parent, Parachain { id: _para_id }, GeneralKey(key)) => {
+				// decode the general key
+				if let Ok(currency_id) = CurrencyId::from(key[0]) {
+					// check `currency_id` is cross-chain asset
+					match currency_id {
+						CurrencyId::HDT => Some(currency_id),
+						_ => None,
+					}
+				} else {
+					None
+				}
+			}
+			_ => None,
+		}
+	}
+}
+impl Convert<MultiAsset, Option<CurrencyId>> for CurrencyIdConvert {
+	fn convert(asset: MultiAsset) -> Option<CurrencyId> {
+		if let MultiAsset::ConcreteFungible { id, amount: _ } = asset {
+			Self::convert(id)
+		} else {
+			None
+		}
 	}
 }
 
 pub type LocalAssetTransactor = XCMMultiCurrencyAdapter<
 	Currencies,
 	UnknownTokens,
-	IsConcreteWithGeneralKey<CurrencyId, RelayToNative>,
-	LocationConverter,
+	IsNativeConcrete<CurrencyId, CurrencyIdConvert>,
 	AccountId,
-	AssetCurrencyConverter,
+	LocationConverter,
 	AssetId,
+	CurrencyIdConvert,
 >;
 
 type LocalOriginConverter = (
@@ -425,15 +457,6 @@ type LocalOriginConverter = (
 	SignedAccountId32AsNative<HydrateNetwork, Origin>,
 );
 
-parameter_types! {
-	pub NativeTokens: BTreeSet<(Vec<u8>, MultiLocation)> = {
-		let mut t = BTreeSet::new();
-		t.insert(("AUSD".into(), (Junction::Parent, Junction::Parachain { id: 666 }).into()));
-		t.insert(("ACA".into(), (Junction::Parent, Junction::Parachain { id: 666 }).into()));
-		t
-	};
-}
-
 pub struct XcmConfig;
 impl Config for XcmConfig {
 	type Call = Call;
@@ -441,7 +464,7 @@ impl Config for XcmConfig {
 	// How to withdraw and deposit an asset.
 	type AssetTransactor = LocalAssetTransactor;
 	type OriginConverter = LocalOriginConverter;
-	type IsReserve = NativePalletAssetOr<NativeTokens>;
+	type IsReserve = MultiNativeAsset;
 	type IsTeleporter = ();
 	type LocationInverter = LocationInverter<Ancestry>;
 }
@@ -485,13 +508,17 @@ impl XcmHandlerT<AccountId> for HandleXcm {
 	}
 }
 
+parameter_types! {
+	pub SelfLocation: MultiLocation = X2(Parent, Parachain { id: ParachainInfo::get().into() });
+}
+
 impl orml_xtokens::Config for Runtime {
 	type Event = Event;
 	type Balance = Balance;
-	type ToRelayChainBalance = NativeToRelay;
+	type CurrencyId = CurrencyId;
+	type CurrencyIdConvert = CurrencyIdConvert;
 	type AccountId32Convert = AccountId32Convert;
-	type RelayChainNetworkId = PolkadotNetworkId;
-	type ParaId = ParachainInfo;
+	type SelfLocation = SelfLocation;
 	type XcmHandler = HandleXcm;
 }
 
