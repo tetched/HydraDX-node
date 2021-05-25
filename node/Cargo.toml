@@ -10,7 +10,7 @@ repository = 'https://github.com/galacticcouncil/hydradx-node'
 version = '5.0.0'
 
 [[bin]]
-name = 'hydra-dx'
+name = 'tetched-node'
 
 [package.metadata.docs.rs]
 targets = ['x86_64-unknown-linux-gnu']
