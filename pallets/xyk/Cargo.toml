@@ -1,10 +1,10 @@
 [package]
 authors = ['GalacticCouncil']
-description = 'HydraDX XYK Pallet'
+description = 'Tetched XYK Pallet'
 edition = '2018'
 homepage = 'https://github.com/galacticcouncil/hydradx-node'
 license = 'Apache 2.0'
-name = 'pallet-xyk'
+name = 'noble-xyk'
 repository = 'https://github.com/galacticcouncil/hydradx-node'
 version = '1.0.0'
 
