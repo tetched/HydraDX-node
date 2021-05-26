@@ -1,5 +1,5 @@
 [package]
-name = "pallet-genesis-history"
+name = "noble-genesis-history"
 version = "1.0.1"
 description = "Keeping track of the past chain generations."
 authors = ["GalacticCouncil <hydradx@galacticcouncil.io>"]
