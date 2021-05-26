@@ -1,10 +1,10 @@
 [package]
 authors = ['GalacticCouncil']
-description = 'HydraDX Exchange Module'
+description = 'Tetched Exchange Module'
 edition = '2018'
 homepage = 'https://github.com/galacticcouncil/hydradx-node'
 license = 'Apache 2.0'
-name = 'pallet-exchange'
+name = 'noble-exchange'
 repository = 'https://github.com/galacticcouncil/hydradx-node'
 version = '3.0.1'
 
