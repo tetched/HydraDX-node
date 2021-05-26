@@ -1,6 +1,6 @@
 [package]
 authors = ["Parity Technologies <admin@parity.io>"]
-description = "FRAME pallet to manage balances"
+description = "FABRIC Noble to manage balances"
 edition = "2018"
 homepage = "https://substrate.dev"
 license = "Apache-2.0"
